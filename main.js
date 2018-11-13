@@ -182,6 +182,7 @@ function Minion(x,y,color,radius=20) {
 	this.radius = radius;
 	this.speed = 2;
 	this.fixed = [false];//Changes between [false] and [true,[player.posx,player.posy]]
+	this.lastpos = [null,null];
 }
 
 Minion.prototype.draw = function() {
@@ -194,12 +195,11 @@ Minion.prototype.draw = function() {
 }
 
 Minion.prototype.move = function(minionNum) { //What the index is for this minion in player.minions
-	console.log(this.fixed[0] == false || this.fixed[0] && (this.fixed[1][0] != player.posx || this.fixed[1][1] != player.posy));
 	if (this.fixed[0] == false || this.fixed[0] && (this.fixed[1][0] != player.posx || this.fixed[1][1] != player.posy)) {
 		this.fixed = [false];
 		let goalVector = distVector([this.posx,this.posy],[player.posx,player.posy],false,[this.radius,player.radius],this.speed);
 		let avoidanceVector = [0,0];
-		let shortestMagnitude = [NaN,NaN];
+		let shortestMagnitude = [null,null];
 		for (let i = 0;i<player.minions.length;i++) {
 			if (i != minionNum) { //Make sure that the minion isn't comparing itself to itself
 				let absVector = distVector([this.posx,this.posy],[player.minions[i].posx,player.minions[i].posy]);
@@ -209,7 +209,7 @@ Minion.prototype.move = function(minionNum) { //What the index is for this minio
 					player.minions[i].posy += (Math.random() < 0.5) ? -radiiSum : radiiSum;
 				}
 				let tempVector = distVector([this.posx,this.posy],[player.minions[i].posx,player.minions[i].posy],true,[this.radius,player.minions[i].radius]);
-				if (isNaN(shortestMagnitude[0]) || vectorMagnitude(tempVector)<shortestMagnitude[0]) {
+				if (shortestMagnitude[0] == null || vectorMagnitude(tempVector)<shortestMagnitude[0]) {
 					shortestMagnitude[0] = vectorMagnitude(tempVector);
 					shortestMagnitude[1] = player.minions[i];
 				}
@@ -217,11 +217,13 @@ Minion.prototype.move = function(minionNum) { //What the index is for this minio
 				avoidanceVector[1] += 100/tempVector[1];
 			}
 		}
-		if (!isNaN(shortestMagnitude[1]) && shortestMagnitude[1].fixed[0] && shortestMagnitude[1].fixed[1][0] == player.posx && shortestMagnitude[1].fixed[1][1] == player.posy) { //Nearest minion not moving anymore
+		console.log(shortestMagnitude[1]);
+		if (shortestMagnitude[1] != null && shortestMagnitude[1].fixed[0] && shortestMagnitude[1].fixed[1][0] == player.posx && shortestMagnitude[1].fixed[1][1] == player.posy) { //Nearest minion not moving anymore
 			this.fixed = [true,[player.posx,player.posy]];
+			console.log("We're in here!");
 		} else {
 			avoidanceVector = (player.minions.length > 1) ? [avoidanceVector[0]/player.minions.length-1,avoidanceVector[1]/player.minions.length-1] : [0,0];
-			let repelPercentage = (!isNaN(shortestMagnitude[0])) ? (-Math.tanh((shortestMagnitude[0]-repelConstant*4)/(repelConstant*3))+1)/2 : 0;
+			let repelPercentage = (shortestMagnitude[0] != null) ? (-Math.tanh((shortestMagnitude[0]-repelConstant*4)/(repelConstant*3))+1)/2 : 0;
 			if (vectorMagnitude(goalVector) <= this.speed) {
 				this.fixed = [true,[player.posx,player.posy]];
 				return;
@@ -229,6 +231,7 @@ Minion.prototype.move = function(minionNum) { //What the index is for this minio
 			let avoidanceUVector = unitVector(avoidanceVector);
 			let goalUVector = unitVector(goalVector);
 			let finalUVector = unitVector([avoidanceUVector[0]*repelPercentage+goalUVector[0]*(1-repelPercentage),avoidanceUVector[1]*repelPercentage+goalUVector[1]*(1-repelPercentage)]);
+			this.lastpos = [this.posx,this.posy];
 			this.posx += this.speed * finalUVector[0];
 			this.posy += this.speed * finalUVector[1];
 		}
