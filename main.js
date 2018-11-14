@@ -7,7 +7,7 @@ canvas.height = document.body.clientHeight;
 
 const ctx = canvas.getContext("2d");
 
-const repelConstant = 2;//Constant used for reversing minion vectors
+const repelConstant = 1.75;//Constant used for reversing minion vectors
 
 var map = new Map(2000,2000)//,[new Tree(1000,1000,200)]);
 
@@ -182,7 +182,7 @@ function Minion(x,y,color,radius=20) {
 	this.radius = radius;
 	this.speed = 2;
 	this.fixed = [false];//Changes between [false] and [true,[player.posx,player.posy]]
-	this.lastpos = [null,null];
+	this.recentGoalMags = [];
 }
 
 Minion.prototype.draw = function() {
@@ -198,8 +198,9 @@ Minion.prototype.move = function(minionNum) { //What the index is for this minio
 	if (this.fixed[0] == false || this.fixed[0] && (this.fixed[1][0] != player.posx || this.fixed[1][1] != player.posy)) {
 		this.fixed = [false];
 		let goalVector = distVector([this.posx,this.posy],[player.posx,player.posy],false,[this.radius,player.radius],this.speed);
+		let closeMinions = [];//Indexes of Minions in player.minions within 10px of this Minion
 		let avoidanceVector = [0,0];
-		let shortestMagnitude = [null,null];
+		let shortestMagnitude = null;
 		for (let i = 0;i<player.minions.length;i++) {
 			if (i != minionNum) { //Make sure that the minion isn't comparing itself to itself
 				let absVector = distVector([this.posx,this.posy],[player.minions[i].posx,player.minions[i].posy]);
@@ -209,21 +210,25 @@ Minion.prototype.move = function(minionNum) { //What the index is for this minio
 					player.minions[i].posy += (Math.random() < 0.5) ? -radiiSum : radiiSum;
 				}
 				let tempVector = distVector([this.posx,this.posy],[player.minions[i].posx,player.minions[i].posy],true,[this.radius,player.minions[i].radius]);
-				if (shortestMagnitude[0] == null || vectorMagnitude(tempVector)<shortestMagnitude[0]) {
-					shortestMagnitude[0] = vectorMagnitude(tempVector);
-					shortestMagnitude[1] = player.minions[i];
+				if (shortestMagnitude == null || vectorMagnitude(tempVector)<shortestMagnitude) {
+					shortestMagnitude = vectorMagnitude(tempVector);
+				}
+				if (vectorMagnitude(tempVector) < 10) {
+					closeMinions.push(i);
 				}
 				avoidanceVector[0] += 100/tempVector[0];
 				avoidanceVector[1] += 100/tempVector[1];
 			}
 		}
-		console.log(shortestMagnitude[1]);
-		if (shortestMagnitude[1] != null && shortestMagnitude[1].fixed[0] && shortestMagnitude[1].fixed[1][0] == player.posx && shortestMagnitude[1].fixed[1][1] == player.posy) { //Nearest minion not moving anymore
-			this.fixed = [true,[player.posx,player.posy]];
-			console.log("We're in here!");
-		} else {
+		closeMinions.forEach(function(minionIndex) {
+			if (player.minions[minionIndex].fixed[0] && player.minions[minionIndex].fixed[1][0] == player.posx && player.minions[minionIndex].fixed[1][1] == player.posy) { //One of nearest minions not moving anymore
+				player.minions[minionNum].fixed = [true,[player.posx,player.posy]];
+				return;
+			}
+		});
+		if (!this.fixed[0]) {
 			avoidanceVector = (player.minions.length > 1) ? [avoidanceVector[0]/player.minions.length-1,avoidanceVector[1]/player.minions.length-1] : [0,0];
-			let repelPercentage = (shortestMagnitude[0] != null) ? (-Math.tanh((shortestMagnitude[0]-repelConstant*4)/(repelConstant*3))+1)/2 : 0;
+			let repelPercentage = (shortestMagnitude != null) ? (-Math.tanh((shortestMagnitude-repelConstant*4)/(repelConstant*3))+1)/2 : 0;
 			if (vectorMagnitude(goalVector) <= this.speed) {
 				this.fixed = [true,[player.posx,player.posy]];
 				return;
@@ -231,9 +236,15 @@ Minion.prototype.move = function(minionNum) { //What the index is for this minio
 			let avoidanceUVector = unitVector(avoidanceVector);
 			let goalUVector = unitVector(goalVector);
 			let finalUVector = unitVector([avoidanceUVector[0]*repelPercentage+goalUVector[0]*(1-repelPercentage),avoidanceUVector[1]*repelPercentage+goalUVector[1]*(1-repelPercentage)]);
-			this.lastpos = [this.posx,this.posy];
 			this.posx += this.speed * finalUVector[0];
 			this.posy += this.speed * finalUVector[1];
+			this.recentGoalMags.push(vectorMagnitude(goalVector));//Add vector to end of this.recentGoalMags
+			if (this.recentGoalMags.length>5) {
+				this.recentGoalMags.shift();
+				if (Math.max(...this.recentGoalMags)-Math.min(...this.recentGoalMags) < 2 && vectorMagnitude(distVector([this.posx,this.posy],[player.posx,player.posy])) < this.radius+player.radius) {
+					this.fixed = [true,[player.posx,player.posy]];
+				}
+			}
 		}
 	}
 }
@@ -261,6 +272,6 @@ function draw() {
 	drawStats();
 }
 
-player.minions = [new Minion(980,920,"orange",5),new Minion(1020,880,"blue",10),new Minion(1020,880,"blue",15),new Minion(1020,880,"blue",20),new Minion(1020,880,"blue",25)];
+player.minions = [new Minion(980,920,"orange",5),new Minion(1020,880,"blue",30),new Minion(1020,880,"blue",15),new Minion(1020,880,"blue",20),new Minion(1020,880,"blue",25)];
 
 setInterval(draw,15);//Close enough to 16.666 seconds, 1000/60
