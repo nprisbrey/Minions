@@ -7,11 +7,12 @@ canvas.height = document.body.clientHeight;
 
 const ctx = canvas.getContext("2d");
 
-const repelConstant = 1.75;//Constant used for reversing minion vectors
+const minionRadius = 15;
+const minionNeighboringDistance = 2*minionRadius;//Constant used for size of circle around each Minion
 
-var map = new Map(2000,2000)//,[new Tree(1000,1000,200)]);
+var map = new Map(2000,2000);//,[new Tree([1000,1000],200)]);
 
-var player = new Player(map.width/2,map.height/2,50,3);
+var player = new Player([map.width/2,map.height/2],50,3);
 
 const resourceMap = ["Wood"];//Which resources are available. Same order as the resources are stored in player
 
@@ -19,25 +20,20 @@ var keystates = [false,false,false,false];//If key is pressed. Left, Right, Up, 
 
 //HELPER FUNCTIONS
 
-function withinScreen(posx,posy,width,height) { //Returns if an object should be drawn or skipped. posx: board x-position, posy: board y-position, width: full width of object, height: full height of object
-	return posx < (player.posx+canvas.width/2+width/2) && posx > (player.posx-canvas.width/2-width/2) && posy < (player.posy+canvas.height/2+height/2) && posy > (player.posy-canvas.height/2-height/2);
+function withinScreen(pos,width,height) { //Returns if an object should be drawn or skipped. pos: board position, width: full width of object, height: full height of object
+	return pos[0] < (player.pos[0]+canvas.width/2+width/2) && pos[0] > (player.pos[0]-canvas.width/2-width/2) && pos[1] < (player.pos[1]+canvas.height/2+height/2) && pos[1] > (player.pos[1]-canvas.height/2-height/2);
 }
 
 function boardXToCanvasX(posx) { //Returns board x-position's x-coordinate on the canvas
-	return canvas.width/2 + (posx-player.posx);
+	return canvas.width/2 + (posx-player.pos[0]);
 }
 
 function boardYToCanvasY(posy) { //Returns board y-position's y-coordinate on the canvas
-	return canvas.height/2 + (posy-player.posy);
+	return canvas.height/2 + (posy-player.pos[1]);
 }
 
-function distVector([xposone,yposone],[xpostwo,ypostwo],reverseVector=false,radii=[0,0],speed=0) { //Vector from the first location to second location, puts the vector through -1 * 1/n * repelConstant function if reverseVector is true
-	let xcomponent = (reverseVector) ? -(xpostwo-xposone) : xpostwo-xposone;
-	let ycomponent = (reverseVector) ? -(ypostwo-yposone) : ypostwo-yposone;
-	let uVector = unitVector([xcomponent,ycomponent]);
-	xcomponent -= (radii[0]+radii[1]) * uVector[0];
-	ycomponent -= (radii[0]+radii[1]) * uVector[1];
-	return [xcomponent,ycomponent];
+function distMagnitude([xposone,yposone],[xpostwo,ypostwo]) {
+	return vectorMagnitude([xpostwo-xposone,ypostwo-yposone]);
 }
 
 function unitVector([xcomponent,ycomponent]) { //Returns unit vector of given vector
@@ -49,21 +45,63 @@ function vectorMagnitude([xcomponent,ycomponent]) { //Returns magnitude of given
 	return Math.sqrt(Math.pow(xcomponent,2)+Math.pow(ycomponent,2));
 }
 
+function vectorAdd(...paramVectors) {
+	let resultVector = [0,0];
+	for (let i = 0; i < paramVectors.length; i++) {
+		resultVector[0] += paramVectors[i][0];
+		resultVector[1] += paramVectors[i][1];
+	}
+	return resultVector;
+}
+
+function vectorSubtract(...paramVectors) { //Second to last vectors subtracted from first vector given
+	let resultVector = paramVectors[0].slice(0);//Have to use ".slice" or else this operations is copy by reference, not value. ".slice" only performs a shallow copy
+	for (let i = 1; i < paramVectors.length; i++) {
+		resultVector[0] -= paramVectors[i][0];
+		resultVector[1] -= paramVectors[i][1];
+	}
+	return resultVector;
+}
+
+function vectorDivide(vector,divisor) {
+	return [vector[0]/divisor,vector[1]/divisor];
+}
+
+function vectorMultiply(vector,multiplier) {
+	return [vector[0]*multiplier,vector[1]*multiplier];
+}
+
+//REYNOLD'S BOIDS HELPER FUNCTIONS
+
+function ruleOne(minionNum) { //Cohesion towards player
+	return vectorDivide(vectorSubtract(player.pos,player.minions[minionNum].pos),100);
+}
+
+function ruleTwo(minionNum) { //Separation from other Minions
+	let resultVector = [0,0];
+	for (let i = 0; i < player.minions.length; i++) {
+		if (minionNum != i && distMagnitude(player.minions[i].pos,player.minions[minionNum].pos) < minionNeighboringDistance) {
+			resultVector = vectorSubtract(resultVector,vectorSubtract(player.minions[i].pos,player.minions[minionNum].pos));
+		}
+	}
+	return resultVector;
+}
+
 //USER INPUT
 
 function keyDown(event) {
 	let key = event.which || event.keyCode;
 	if (key == 37 && keystates[0]==false) { //Left arrow key
-		player.velx -= 1;
+		player.vel[0] -= 1;
 		keystates[0] = true;
 	} else if (key == 39 && keystates[1]==false) { //Right arrow key
-		player.velx += 1;
+		player.vel[0] += 1;
 		keystates[1] = true;
 	} else if (key == 38 && keystates[2]==false) { //Up arrow key
-		player.vely -= 1;
+		player.vel[1] -= 1;
 		keystates[2] = true;
 	} else if (key == 40 && keystates[3]==false) { //Down arrow key
-		player.vely += 1;
+		player.vel[1] += 1;
 		keystates[3] = true;
 	}
 }
@@ -71,16 +109,16 @@ function keyDown(event) {
 function keyUp(event) {
 	let key = event.which || event.keyCode;
 	if (key == 37 && keystates[0]==true) { //Left arrow key. The keystates check is left in to stop unusual movement if the user loaded the page already pressing an arrow key
-		player.velx += 1;
+		player.vel[0] += 1;
 		keystates[0] = false;
 	} else if (key == 39 && keystates[1]==true) { //Right arrow key
-		player.velx -= 1;
+		player.vel[0] -= 1;
 		keystates[1] = false;
 	} else if (key == 38 && keystates[2]==true) { //Up arrow key
-		player.vely += 1;
+		player.vel[1] += 1;
 		keystates[2] = false;
 	} else if (key == 40 && keystates[3]==true) { //Down arrow key
-		player.vely -= 1;
+		player.vel[1] -= 1;
 		keystates[3] = false;
 	}
 }
@@ -94,21 +132,21 @@ function Map(width,height,trees=[]) { // width: int, height: int, trees: Tree[]
 }
 
 Map.prototype.drawLandscape = function() {
-	let xcoord = (player.posx >= canvas.width/2) ? 0 : canvas.width/2-player.posx;//Coordinate on canvas, not map
-	let ycoord = (player.posy >= canvas.height/2) ? 0 : canvas.height/2-player.posy;//Coordinate on canvas, not map
-	let width = (player.posx+canvas.width/2 <= this.width) ? canvas.width-xcoord : (canvas.width/2-xcoord)+(this.width-player.posx);//Derived from commented code below
-	let height = (player.posy+canvas.height/2 <= this.height) ? canvas.height-ycoord : (canvas.height/2-ycoord)+(this.height-player.posy);//Derived from commented code below
+	let xcoord = (player.pos[0] >= canvas.width/2) ? 0 : canvas.width/2-player.pos[0];//Coordinate on canvas, not map
+	let ycoord = (player.pos[1] >= canvas.height/2) ? 0 : canvas.height/2-player.pos[1];//Coordinate on canvas, not map
+	let width = (player.pos[0]+canvas.width/2 <= this.width) ? canvas.width-xcoord : (canvas.width/2-xcoord)+(this.width-player.pos[0]);//Derived from commented code below
+	let height = (player.pos[1]+canvas.height/2 <= this.height) ? canvas.height-ycoord : (canvas.height/2-ycoord)+(this.height-player.pos[1]);//Derived from commented code below
 	/*EXPANDED VERSION
 	let width,height;
-	if(player.posx+canvas.width/2<=this.width) {//If extending to right edge of the canvas
+	if(player.pos[0]+canvas.width/2<=this.width) {//If extending to right edge of the canvas
 		width = canvas.width-xcoord;
 	} else {
-		width = (canvas.width/2-xcoord)+(this.width-player.posx);
+		width = (canvas.width/2-xcoord)+(this.width-player.pos[0]);
 	}
-	if(player.posy+canvas.height/2<=this.height) {//If extending to the bottom edge of the canvas
+	if(player.pos[1]+canvas.height/2<=this.height) {//If extending to the bottom edge of the canvas
 		height = canvas.height-ycoord;
 	} else {
-		height = (canvas.height/2-ycoord)+(this.height-player.posy);
+		height = (canvas.height/2-ycoord)+(this.height-player.pos[1]);
 	}*/
 	ctx.fillStyle="#33cc33";
 	ctx.fillRect(xcoord,ycoord,width,height);
@@ -122,26 +160,23 @@ Map.prototype.drawObjects = function() {
 
 //TREE
 
-function Tree(x,y,size) {
-	this.posx = x;
-	this.posy = y;
+function Tree(pos,size) {
+	this.pos = pos;
 	this.size = size;
 }
 
 Tree.prototype.draw = function() {
-	if (withinScreen(this.posx,this.posy,this.size,this.size/2)) { //Only draw tree if part of it can be seen by the user
+	if (withinScreen(this.pos,this.size,this.size/2)) { //Only draw tree if part of it can be seen by the user
 		ctx.fillStyle = "#00b300";
-		ctx.fillRect(boardXToCanvasX(this.posx)-this.size/2, boardYToCanvasY(this.posy)-this.size/4, this.size, this.size/2);
+		ctx.fillRect(boardXToCanvasX(this.pos[0])-this.size/2, boardYToCanvasY(this.pos[1])-this.size/4, this.size, this.size/2);
 	}
 }
 
 //PLAYER
 
-function Player(x,y,radius,speed) {
-	this.posx = x;
-	this.posy = y;
-	this.velx = 0;
-	this.vely = 0;
+function Player(pos,radius,speed) {
+	this.pos = pos;
+	this.vel = [0,0];
 	this.radius = radius;
 	this.speed = speed;
 	this.minions = [];
@@ -160,104 +195,76 @@ Player.prototype.draw = function() {
 }
 
 Player.prototype.move = function() {
-	let uVector = unitVector([this.velx,this.vely]);
+	let uVector = unitVector(this.vel);
 	uVector = [uVector[0]*this.speed,uVector[1]*this.speed];
-	this.posx += (this.posx+uVector[0]>=this.radius && this.posx+uVector[0]<=map.width-this.radius) ? uVector[0] : 0;//Only apply x-movement if you stay inside the map. Derived from code below
-	this.posy += (this.posy+uVector[1]>=this.radius && this.posy+uVector[1]<=map.height-this.radius) ? uVector[1] : 0;//Only apply y-movement if you stay inside the map. Derived from code below
+	this.pos[0] += (this.pos[0]+uVector[0]>=this.radius && this.pos[0]+uVector[0]<=map.width-this.radius) ? uVector[0] : 0;//Only apply x-movement if you stay inside the map. Derived from code below
+	this.pos[1] += (this.pos[1]+uVector[1]>=this.radius && this.pos[1]+uVector[1]<=map.height-this.radius) ? uVector[1] : 0;//Only apply y-movement if you stay inside the map. Derived from code below
 	/*EXPANDED VERSION
-	if(this.posx+uVector[0]>=this.radius && this.posx+uVector[0]<=map.width-this.radius) {
-		this.posx += uVector[0];
+	if(this.pos[0]+uVector[0]>=this.radius && this.pos[0]+uVector[0]<=map.width-this.radius) {
+		this.pos[0] += uVector[0];
 	}
-	if(this.posy+uVector[1]>=this.radius && this.posy+uVector[1]<=map.height-this.radius) {
-		this.posy += uVector[1];
+	if(this.pos[1]+uVector[1]>=this.radius && this.pos[1]+uVector[1]<=map.height-this.radius) {
+		this.pos[1] += uVector[1];
 	}*/
 }
 
 //MINIONS
 
-function Minion(x,y,color,radius=20) {
-	this.posx = x;
-	this.posy = y;
+function Minion(pos,color,radius=minionRadius) {
+	this.pos = pos;
 	this.color = color;
 	this.radius = radius;
-	this.speed = 2;
-	this.fixed = [false];//Changes between [false] and [true,[player.posx,player.posy]]
-	this.recentGoalMags = [];
+	this.maxSpeed = 2;
+	this.velocity = [0,0];
 }
 
 Minion.prototype.draw = function() {
-	if (withinScreen(this.posx,this.posy,this.radius*2,this.radius*2)) {
+	if (withinScreen(this.pos,this.radius*2,this.radius*2)) {
 		ctx.beginPath();
 		ctx.fillStyle = this.color;
-		ctx.arc(boardXToCanvasX(this.posx),boardYToCanvasY(this.posy),this.radius,0,2*Math.PI);
+		ctx.arc(boardXToCanvasX(this.pos[0]),boardYToCanvasY(this.pos[1]),this.radius,0,2*Math.PI);
 		ctx.fill();
 	}
 }
 
-Minion.prototype.move = function(minionNum) { //What the index is for this minion in player.minions
-	if (this.fixed[0] == false || this.fixed[0] && (this.fixed[1][0] != player.posx || this.fixed[1][1] != player.posy)) {
-		this.fixed = [false];
-		let goalVector = distVector([this.posx,this.posy],[player.posx,player.posy],false,[this.radius,player.radius],this.speed);
-		let closeMinions = [];//Indexes of Minions in player.minions within 10px of this Minion
-		let avoidanceVector = [0,0];
-		let shortestMagnitude = null;
-		for (let i = 0;i<player.minions.length;i++) {
-			if (i != minionNum) { //Make sure that the minion isn't comparing itself to itself
-				let absVector = distVector([this.posx,this.posy],[player.minions[i].posx,player.minions[i].posy]);
-				let radiiSum = this.radius+player.minions[i].radius;
-				if (vectorMagnitude(absVector) < radiiSum) {
-					player.minions[i].posx += (Math.random() < 0.5) ? -radiiSum : radiiSum;
-					player.minions[i].posy += (Math.random() < 0.5) ? -radiiSum : radiiSum;
-				}
-				let tempVector = distVector([this.posx,this.posy],[player.minions[i].posx,player.minions[i].posy],true,[this.radius,player.minions[i].radius]);
-				if (shortestMagnitude == null || vectorMagnitude(tempVector)<shortestMagnitude) {
-					shortestMagnitude = vectorMagnitude(tempVector);
-				}
-				if (vectorMagnitude(tempVector) < 10) {
-					closeMinions.push(i);
-				}
-				avoidanceVector[0] += 100/tempVector[0];
-				avoidanceVector[1] += 100/tempVector[1];
-			}
-		}
-		closeMinions.forEach(function(minionIndex) {
-			if (player.minions[minionIndex].fixed[0] && player.minions[minionIndex].fixed[1][0] == player.posx && player.minions[minionIndex].fixed[1][1] == player.posy) { //One of nearest minions not moving anymore
-				player.minions[minionNum].fixed = [true,[player.posx,player.posy]];
-				return;
-			}
-		});
-		if (!this.fixed[0]) {
-			avoidanceVector = (player.minions.length > 1) ? [avoidanceVector[0]/player.minions.length-1,avoidanceVector[1]/player.minions.length-1] : [0,0];
-			let repelPercentage = (shortestMagnitude != null) ? (-Math.tanh((shortestMagnitude-repelConstant*4)/(repelConstant*3))+1)/2 : 0;
-			if (vectorMagnitude(goalVector) <= this.speed) {
-				this.fixed = [true,[player.posx,player.posy]];
-				return;
-			}
-			let avoidanceUVector = unitVector(avoidanceVector);
-			let goalUVector = unitVector(goalVector);
-			let finalUVector = unitVector([avoidanceUVector[0]*repelPercentage+goalUVector[0]*(1-repelPercentage),avoidanceUVector[1]*repelPercentage+goalUVector[1]*(1-repelPercentage)]);
-			this.posx += this.speed * finalUVector[0];
-			this.posy += this.speed * finalUVector[1];
-			this.recentGoalMags.push(vectorMagnitude(goalVector));//Add vector to end of this.recentGoalMags
-			if (this.recentGoalMags.length>5) {
-				this.recentGoalMags.shift();
-				if (Math.max(...this.recentGoalMags)-Math.min(...this.recentGoalMags) < 2 && vectorMagnitude(distVector([this.posx,this.posy],[player.posx,player.posy])) < this.radius+player.radius) {
-					this.fixed = [true,[player.posx,player.posy]];
-				}
-			}
-		}
+Minion.prototype.move = function(minionNum) { //Parameter: What the index is for this minion in player.minions
+	let v1 = ruleOne(minionNum);
+	let v2 = ruleTwo(minionNum);
+	//let v3 = ruleThree(minionNum);
+	
+	this.velocity = vectorAdd(this.velocity,v1,v2);
+	this.keepInMap();
+	this.limitVelocity();
+	this.pos = vectorAdd(this.pos,this.velocity);
+}
+
+Minion.prototype.limitVelocity = function() {
+	if (vectorMagnitude(this.velocity) > this.maxSpeed) {
+		this.velocity = vectorMultiply(unitVector(this.velocity),this.maxSpeed);
+	}
+}
+
+Minion.prototype.keepInMap = function() {
+	if (this.pos[0] < 0) {
+		this.velocity[0] = 10;
+	} else if (this.pos[0] > map.width) {
+		this.velocity[0] = -10;
+	}
+	if (this.pos[1] < 0) {
+		this.velocity[1] = 10;
+	} else if (this.pos[1] > map.height) {
+		this.velocity[1] = -10;
 	}
 }
 
 //STATS
 
 function drawStats() {
-	let xpos = 10;
-	let ypos = 30;
+	let pos = [10,30];
 	ctx.font = "30px Arial";
 	ctx.fillStyle = "black";
-	for (let i=0;i<resourceMap.length;i++,ypos+=30) {
-		ctx.fillText(resourceMap[i] + ": " + player.resources[i],xpos,ypos);
+	for (let i=0;i<resourceMap.length;i++,pos[1]+=30) {
+		ctx.fillText(resourceMap[i] + ": " + player.resources[i],pos[0],pos[1]);
 	}
 }
 
@@ -272,6 +279,6 @@ function draw() {
 	drawStats();
 }
 
-player.minions = [new Minion(980,920,"orange",5),new Minion(1020,880,"blue",30),new Minion(1020,880,"blue",15),new Minion(1020,880,"blue",20),new Minion(1020,880,"blue",25)];
+player.minions = [new Minion([980,920],"orange"),new Minion([1020,880],"blue"),new Minion([1020,880],"blue"),new Minion([1020,880],"blue"),new Minion([1020,880],"blue"),new Minion([980,920],"orange"),new Minion([1020,880],"blue"),new Minion([1020,880],"blue"),new Minion([1020,880],"blue"),new Minion([1020,880],"blue"),new Minion([980,920],"orange"),new Minion([1020,880],"blue"),new Minion([1020,880],"blue"),new Minion([1020,880],"blue"),new Minion([1020,880],"blue"),new Minion([980,920],"orange"),new Minion([1020,880],"blue"),new Minion([1020,880],"blue"),new Minion([1020,880],"blue"),new Minion([1020,880],"blue")];
 
 setInterval(draw,15);//Close enough to 16.666 seconds, 1000/60
