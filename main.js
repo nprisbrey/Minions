@@ -87,6 +87,10 @@ function vectorDotProduct(vector1,vector2) { //Returns the dot product of the tw
 	return vector1[0]*vector2[0]+vector1[1]*vector2[1];
 }
 
+function vectorRotate(vector,radians) { //Returns given vector rotated by given radian amount counter-clockwise
+	return [vector[0]*Math.cos(radians)-vector[1]*Math.sin(radians),vector[0]*Math.sin(radians)+vector[1]*Math.cos(radians)];
+}
+
 //REYNOLD'S BOIDS HELPER FUNCTIONS
 
 function ruleOne(minionNum) { //Cohesion towards player
@@ -266,8 +270,8 @@ function Minion(pos,color,radius=minionRadius) {
 	this.color = color;
 	this.radius = radius;
 	this.maxSpeed = 2;
-	this.velocity = [0,0];
-	this.resting = [false];//If not resting: [false]. If resting: [true,unit vector of minion to player vector];
+	this.velocity = [1,0];
+	this.resting = [false];//If not resting: [false]. If resting: [true,unit vector from minion to player vector];
 }
 
 Minion.prototype.draw = function() {
@@ -291,15 +295,18 @@ Minion.prototype.move = function(minionNum) { //Parameter: What the index is for
 	this.pos = vectorAdd(this.pos,this.velocity);*/
 	if (this.resting[0]) {
 		this.recalculateResting();
-		let repulseMagnitude = vectorDotProduct(this.resting[1],vectorSubtract(this.velocity,player.velocity));
-		console.log(repulseMagnitude);
-		let v1 = vectorMultiply(this.resting[1],-repulseMagnitude);//Get rid of minion's perpendicular velocity component relative to the player's circle. Divided by a constant to help smooth out the movement
-		this.velocity = vectorAdd(this.velocity,v1);
+		let perpendicularVelMag = vectorDotProduct(this.resting[1],this.velocity);//Dot Product of unit vector from minion to player vector and the current minion's velocity
+		let parallelVelMag = vectorDotProduct(vectorRotate(this.resting[1],Math.PI/2),this.velocity);//Dot Product of unit vector starting from minion parallel to player and the current minion's velocity
+		let circAccelerationMag = Math.pow(parallelVelMag,2)/vectorMagnitude(vectorSubtract(this.pos,player.pos));
+		let v1 = vectorMultiply(this.resting[1],circAccelerationMag);
+		let v2 = vectorMultiply(vectorRotate(this.resting[1],Math.PI),perpendicularVelMag);
+		console.log(circAccelerationMag);
+		this.velocity = vectorAdd(this.velocity,v1,v2);
 	}
 	if (distMagnitude(this.pos,player.pos) <= minionCirclingRadius && !this.resting[0]) {
 		this.resting[0] = true;
 	}
-	this.limitVelocity();
+	//this.limitVelocity();
 	//console.log(this.velocity);
 	this.pos = vectorAdd(this.pos,this.velocity);
 }
