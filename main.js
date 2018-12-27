@@ -10,7 +10,7 @@ const ctx = canvas.getContext("2d");
 const minionRadius = 15;
 const minionNeighboringDistance = 2.5*minionRadius;//Constant used for size of circle around each Minion
 const minionCirclingRadius = 75;
-const minionRestingSpeed = 10;
+const minionRestingSpeed = 3;
 
 var map = new Map(2000,2000);//,[new Tree([1000,1000],200),new Tree([700,1000],200),new Tree([700,700],200),new Tree([1000,700],200)]);
 
@@ -296,12 +296,21 @@ Minion.prototype.move = function(minionNum) { //Parameter: What the index is for
 	if (this.resting[0]) {
 		this.recalculateResting();
 		let perpendicularVelMag = vectorDotProduct(this.resting[1],this.velocity);//Dot Product of unit vector from minion to player vector and the current minion's velocity
-		let parallelVelMag = vectorDotProduct(vectorRotate(this.resting[1],Math.PI/2),this.velocity);//Dot Product of unit vector starting from minion parallel to player and the current minion's velocity
-		let circAccelerationMag = Math.pow(parallelVelMag,2)/vectorMagnitude(vectorSubtract(this.pos,player.pos));
-		let v1 = vectorMultiply(this.resting[1],circAccelerationMag);
-		let v2 = vectorMultiply(vectorRotate(this.resting[1],Math.PI),perpendicularVelMag);
-		console.log(circAccelerationMag);
-		this.velocity = vectorAdd(this.velocity,v1,v2);
+		let parallelVelMag = vectorDotProduct(vectorRotate(this.resting[1],-Math.PI/2),this.velocity);//Dot Product of unit vector starting from minion parallel to player and the current minion's velocity
+		if (perpendicularVelMag < 1) {
+			perpendicularVelMag = 0;
+			this.velocity = vectorMultiply(vectorRotate(this.resting[1],Math.PI/2),parallelVelMag);
+		}
+		let circAccelerationMag = Math.pow(parallelVelMag,2)/vectorMagnitude(vectorSubtract(player.pos,this.pos));
+		let v1 = vectorMultiply(this.resting[1],circAccelerationMag);//Accelerate towards player
+		let v2 = vectorMultiply(vectorRotate(this.resting[1],Math.PI/2),minionRestingSpeed-parallelVelMag);
+		let v3 = vectorMultiply(this.resting[1],-perpendicularVelMag);//Cancel out Minion's perpendicular motion
+		console.log(perpendicularVelMag);
+		ctx.beginPath();
+		ctx.moveTo(boardXToCanvasX(this.pos[0]),boardYToCanvasY(this.pos[1]));
+		ctx.lineTo(boardXToCanvasX(this.pos[0])+this.resting[1][0]*30,boardYToCanvasY(this.pos[1])+this.resting[1][1]*30);
+		ctx.stroke();
+		this.velocity = vectorAdd(this.velocity,v1,v3);
 	}
 	if (distMagnitude(this.pos,player.pos) <= minionCirclingRadius && !this.resting[0]) {
 		this.resting[0] = true;
@@ -312,7 +321,7 @@ Minion.prototype.move = function(minionNum) { //Parameter: What the index is for
 }
 
 Minion.prototype.recalculateResting = function() {
-	this.resting = [true,unitVector(vectorSubtract(this.pos,player.pos))];
+	this.resting = [true,unitVector(vectorSubtract(player.pos,this.pos))];
 }
 
 Minion.prototype.limitVelocity = function() {
